@@ -1,0 +1,22 @@
+# Secrets
+.env
+
+# Data (contains user IDs / names)
+usage.db*
+usage.db
+usage.db-wal
+usage.db-shm
+bot_state.json
+
+# Calendar cache
+barcelona.ics
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# Old bots
+barca_old_bot/
+old_bot/
+
