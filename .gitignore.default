@@ -1,0 +1,8 @@
+.env
+usage.db*
+bot_state.json
+bot_state.json.tmp
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
