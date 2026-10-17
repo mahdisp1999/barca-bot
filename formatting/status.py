@@ -87,7 +87,7 @@ def next_block(ev: dict, now: datetime) -> str:
         "🔜 <b>بازی بعدی:</b>",
         f"🏆 رقابت: {esc(names.competition_fa(ev['competition']))}",
         f"⚔️ حریف: {opponent} - {side}",
-        f"🏟️ ورزشگاه: {_stadium_line(ev)}",
+        # f"🏟️ ورزشگاه: {_stadium_line(ev)}",
         f"📆 تاریخ: {fmt.jalali_date_str(local.date())}، ({fmt.gregorian_date_str(local.date())})",
         # The bot is for Iranian users, so the local time is always labelled "Iran time".
         f"⏰ ساعت: حدود ساعت {fmt.fa_digits(f'{local:%H:%M}')} به وقت ایران "

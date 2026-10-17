@@ -32,6 +32,7 @@ def build_application() -> Application:
         raise RuntimeError(
             'JobQueue غیرفعال است؛ بدون آن یادآوری کار نمی‌کند. نصب: pip install "python-telegram-bot[job-queue]"'
         )
+    app.job_queue.run_daily(jobs.daily_sync, time=settings.DAILY_SYNC_AT, name="daily_sync")
     app.job_queue.run_repeating(
         jobs.check_reminders, interval=settings.REMINDER_CHECK_INTERVAL, first=10, name="reminders"
     )

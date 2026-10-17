@@ -20,9 +20,9 @@ def main() -> None:
         logger.error("توکن تنظیم نشده است (TELEGRAM_BOT_TOKEN در .env).")
         sys.exit(1)
     if not settings.ADMIN_ID:
-        logger.warning("TELEGRAM_ADMIN_ID تنظیم نشده — هشدارها ارسال نمی‌شوند و /usage بسته است.")
+        logger.warning("TELEGRAM_ADMIN_ID تنظیم نشده — /usage بسته است.")
     if not settings.ALLOWED_IDS:
-        logger.warning("ALLOWED_USERS خالی است — همه‌ی کاربران مجاز هستند.")
+        logger.warning("ALLOWED_USERS و TELEGRAM_ADMIN_ID خالی‌اند — پیام خودکاری ارسال نمی‌شود.")
     if not settings.SPORTS_API_KEY:
         logger.warning("SPORTS_API_KEY تنظیم نشده — داده‌ی بازی‌ها دریافت نمی‌شود.")
 

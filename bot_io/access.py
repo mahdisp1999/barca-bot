@@ -14,6 +14,13 @@ def is_admin(user_id: int) -> bool:
     return bool(settings.ADMIN_ID) and user_id == settings.ADMIN_ID
 
 
+def recipients() -> list:
+    """همه‌ی کاربران مجاز (ادمین داخل ALLOWED_IDS هست)."""
+    if settings.ALLOWED_IDS:
+        return sorted(settings.ALLOWED_IDS)
+    return [settings.ADMIN_ID] if settings.ADMIN_ID else []
+
+
 def can_use(user_id, admin_only: bool = False) -> bool:
     """Admin-only commands need TELEGRAM_ADMIN_ID to be set; an empty allow-list
     means everybody may use the normal commands."""

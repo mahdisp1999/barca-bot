@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 from typing import List
 from zoneinfo import ZoneInfo
+from datetime import time
 
 _log = logging.getLogger(__name__)
 
@@ -77,10 +78,15 @@ SPORTS_API_BASE_URL = os.getenv(
 TEAM_ID = os.getenv("TEAM_ID", "2817").strip()  # FC Barcelona (verify with a real response)
 LOCAL_TZ = ZoneInfo(os.getenv("LOCAL_TZ", "Asia/Tehran"))
 REQUEST_TIMEOUT = 10  # seconds
-CACHE_TTL_NEXT = 15 * 60  # seconds; the API quota is shared, so cache hard
-CACHE_TTL_LAST = 10 * 60
-RETRY_AFTER_FAILURE = 60  # retry sooner than the TTL after a failed call
+CACHE_TTL_NEXT = 24 * 3600  # seconds; the API quota is shared, so cache hard
+CACHE_TTL_LAST = 6 * 3600  # results are fetched with force=True by the result job
+RETRY_AFTER_FAILURE = 60  # base back-off after a failed call (doubles per failure)
+RATE_LIMIT_BACKOFF = 15 * 60  # first back-off after HTTP 429 (when no Retry-After header)
+MAX_BACKOFF = 3600  # back-off never exceeds this (seconds)
 MIN_REFRESH_INTERVAL = 30  # /sync spam protection (seconds)
+DAILY_SYNC_AT = time(8, 0, tzinfo=LOCAL_TZ)
+NEAR_KICKOFF_WINDOW_MIN = 120   # از این فاصله به بعد روز بازی حساب میشه
+NEAR_KICKOFF_TTL = 10 * 60      # کش روز بازی
 
 # ---------- reminders / results ----------
 _DEFAULT_REMINDERS = [5, 10, 15, 30, 60]
@@ -94,10 +100,22 @@ RESULT_CHECK_AFTER_MIN = 90  # start looking for a result this long after kick-o
 RESULT_GIVE_UP_AFTER_H = 6  # postponed/abandoned matches are dropped after this
 RESULT_HISTORY = 50  # how many already-sent result uids to remember
 AUTO_STATUS_WINDOW_H = 24  # auto status when the next match is closer than this...
-AUTO_STATUS_QUIET_H = 12  # ...and the admin got no message for this long
+AUTO_STATUS_QUIET_H = 12  # ...and THAT USER got no message for this long
+AUTO_STATUS_RETRY_H = 1  # do not retry an auto status to the same user more often than this
 
 # ---------- storage ----------
 DB_PATH = _path("DB_PATH", "usage.db")
 STATE_FILE = _path("STATE_FILE", "bot_state.json")
+CACHE_FILE = _path("CACHE_FILE", "api_cache.json")  # last good API data, survives restarts
 LOG_RETENTION_DAYS = _int("LOG_RETENTION_DAYS", 180)
 ALERT_RETENTION_DAYS = 30
+
+# ---------- ICS calendar ----------
+# آدرس فایل ICS باشگاه بارسلونا (یا هر منبع دلخواه دیگر).
+# مثال: "https://www.fcbarcelona.com/calendar.ics"
+ICS_URL = os.getenv("ICS_URL", "").strip()
+# مسیر ذخیرهٔ فایل ICS دانلودشده روی دیسک؛ نسبی از ROOT_DIR یا مطلق.
+ICS_PATH = _path("ICS_PATH", "barcelona.ics")
+# فاصلهٔ زمانی بین دو دانلود متوالی فایل ICS، بر حسب ثانیه.
+# پیشنهاد: 6 * 3600 (هر ۶ ساعت) یا 12 * 3600 (هر ۱۲ ساعت) برای مصرف کم.
+ICS_DOWNLOAD_INTERVAL = _int("ICS_DOWNLOAD_INTERVAL", 6 * 3600)

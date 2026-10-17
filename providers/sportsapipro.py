@@ -6,13 +6,21 @@ Public API:
   refresh() -> bool                    re-fetch both feeds; True only if both succeeded
 
 Each event is a flat dict, see _parse(). The API quota is shared across all
-sports of the account, so every call is cached and failures are retried gently.
+sports of the account, so:
+  * every call is cached, and the cache is also saved to settings.CACHE_FILE,
+    so a restart (or an API outage) never leaves the bot without data;
+  * after a failure the API is left alone for a while (back-off). HTTP 429
+    honours the Retry-After header; otherwise the wait doubles per failure.
+    While backed off, callers silently get the last good data.
 """
+import json
 import logging
+import os
 import threading
 import time
 from datetime import datetime, timezone
 from typing import Optional
+from providers import ics as ics_fallback
 
 import httpx
 
@@ -25,10 +33,30 @@ _cache = {
     "last": {"at": 0.0, "events": []},
 }
 _locks = {"next": threading.Lock(), "last": threading.Lock()}
-_TTL = {"next": settings.CACHE_TTL_NEXT, "last": settings.CACHE_TTL_LAST}
 _refresh_lock = threading.Lock()
+_disk_lock = threading.Lock()
 _last_refresh = 0.0
 _warned = set()
+
+# Back-off is global (not per feed) because the quota is shared by both feeds.
+_blocked_until = 0.0
+_fail_streak = 0
+
+
+def _local_now() -> datetime:
+    return datetime.now(settings.LOCAL_TZ).replace(tzinfo=None)
+
+
+def _ttl(kind: str) -> int:
+    """'next' is refreshed more often on match day (kick-off close)."""
+    if kind == "next":
+        now = _local_now()
+        for e in _cache["next"]["events"]:
+            mins = (e["local_dt"] - now).total_seconds() / 60
+            if -30 <= mins <= settings.NEAR_KICKOFF_WINDOW_MIN:
+                return settings.NEAR_KICKOFF_TTL
+        return settings.CACHE_TTL_NEXT
+    return settings.CACHE_TTL_LAST
 
 
 def _warn_once(key: str, msg: str, *args) -> None:
@@ -41,11 +69,77 @@ def _d(value) -> dict:
     return value if isinstance(value, dict) else {}
 
 
+# ---------- disk cache ----------
+
+def _dump(ev: dict) -> dict:
+    return {**ev, "local_dt": ev["local_dt"].isoformat(), "utc_dt": ev["utc_dt"].isoformat()}
+
+
+def _undump(ev: dict) -> dict:
+    return {**ev, "local_dt": datetime.fromisoformat(ev["local_dt"]),
+            "utc_dt": datetime.fromisoformat(ev["utc_dt"])}
+
+
+def _save_disk() -> None:
+    data = {"blocked_until": _blocked_until, "fail_streak": _fail_streak}
+    for kind, entry in _cache.items():
+        data[kind] = {"at": entry["at"], "events": [_dump(e) for e in entry["events"]]}
+    tmp = str(settings.CACHE_FILE) + ".tmp"
+    try:
+        with _disk_lock:
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False)
+            os.replace(tmp, settings.CACHE_FILE)
+    except OSError as e:
+        logger.warning("ذخیره‌ی کش روی دیسک ممکن نشد: %s", e)
+
+
+def _load_disk() -> None:
+    """Restore the last good data at startup. A broken file is simply ignored."""
+    global _blocked_until, _fail_streak
+    try:
+        with open(settings.CACHE_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        for kind in _cache:
+            entry = data.get(kind) or {}
+            events = [_undump(e) for e in entry.get("events", [])]
+            events.sort(key=lambda e: e["local_dt"])
+            _cache[kind] = {"at": float(entry.get("at", 0.0)), "events": events}
+        _blocked_until = float(data.get("blocked_until", 0.0))
+        _fail_streak = int(data.get("fail_streak", 0))
+    except FileNotFoundError:
+        return
+    except Exception as e:  # corrupt / old format: start empty
+        logger.warning("فایل کش خوانده نشد و نادیده گرفته شد: %s", e)
+
+
+# ---------- API ----------
+
+def _register_failure(kind: str, err: Exception, status: Optional[int] = None,
+                      retry_after: Optional[str] = None) -> None:
+    """Log once and push the next allowed API call into the future."""
+    global _blocked_until, _fail_streak
+    _fail_streak += 1
+    if status == 429:
+        wait = int(retry_after) if retry_after and retry_after.isdigit() else \
+            settings.RATE_LIMIT_BACKOFF * 2 ** (_fail_streak - 1)
+    else:
+        wait = settings.RETRY_AFTER_FAILURE * 2 ** (_fail_streak - 1)
+    wait = min(max(wait, settings.RETRY_AFTER_FAILURE), settings.MAX_BACKOFF)
+    _blocked_until = time.time() + wait
+    logger.error("خطا در دریافت رویدادهای %s از API: %s — تا %d دقیقه‌ی دیگر دوباره تلاش نمی‌شود.",
+                 kind, err, max(wait // 60, 1))
+    _save_disk()
+
+
 def _fetch(kind: str) -> Optional[list]:
-    """Call the API. Returns the raw event list, or None on any failure."""
+    """Call the API. Returns the raw event list, or None on failure / back-off."""
+    global _fail_streak
     if not settings.SPORTS_API_KEY:
         logger.error("SPORTS_API_KEY تنظیم نشده است.")
         return None
+    if time.time() < _blocked_until:
+        return None  # backed off: callers fall back to the cached data
 
     url = f"{settings.SPORTS_API_BASE_URL}/teams/{settings.TEAM_ID}/events/{kind}/0"
     try:
@@ -59,10 +153,15 @@ def _fetch(kind: str) -> Optional[list]:
         body = r.json()
         if not body.get("success"):
             raise ValueError(f"success=false: {str(body)[:200]}")
-        return body["data"]["events"]
-    except Exception as e:
-        logger.error("خطا در دریافت رویدادهای %s از API: %s", kind, e)
+        events = body["data"]["events"]
+    except httpx.HTTPStatusError as e:
+        _register_failure(kind, e, e.response.status_code, e.response.headers.get("Retry-After"))
         return None
+    except Exception as e:
+        _register_failure(kind, e)
+        return None
+    _fail_streak = 0
+    return events
 
 
 def _parse(ev: dict) -> Optional[dict]:
@@ -71,8 +170,11 @@ def _parse(ev: dict) -> Optional[dict]:
     `team` / `opponent` / `goals_for` / `goals_against` are relative to TEAM_ID,
     so nothing outside this file needs to know who is home or away.
     """
+    raw_ts = ev.get("startTimestamp")
+    if raw_ts is None:
+        return None
     try:
-        ts = int(ev.get("startTimestamp"))
+        ts = int(raw_ts)
     except (TypeError, ValueError):
         return None
 
@@ -116,12 +218,9 @@ def _parse(ev: dict) -> Optional[dict]:
 
 
 def _load(kind: str) -> bool:
-    """Fetch one feed into the cache. On failure the old data is kept."""
-    entry = _cache[kind]
+    """Fetch one feed into the cache. On failure the old data is kept untouched."""
     raw = _fetch(kind)
     if raw is None:
-        # Retry sooner than the normal TTL, but not on every single call.
-        entry["at"] = time.time() - _TTL[kind] + settings.RETRY_AFTER_FAILURE
         return False
 
     parsed = [p for p in (_parse(e) for e in raw if isinstance(e, dict)) if p]
@@ -133,16 +232,18 @@ def _load(kind: str) -> bool:
             and e["goals_for"] is not None
             and e["goals_against"] is not None
         ]
-    entry["at"] = time.time()
-    entry["events"] = parsed
+    _cache[kind] = {"at": time.time(), "events": parsed}
+    _save_disk()
     return True
 
 
 def _events(kind: str, force: bool = False) -> list:
-    # The lock makes concurrent callers share one fetch instead of each hitting the API.
     with _locks[kind]:
-        if force or time.time() - _cache[kind]["at"] >= _TTL[kind]:
-            _load(kind)
+        if force or time.time() - _cache[kind]["at"] >= _ttl(kind):
+            _load(kind)  # خطا؟ داده‌ی قبلی نگه داشته می‌شود
+        if not _cache[kind]["events"]:
+            # پلن B: API برای این لیست هیچ داده‌ای ندارد
+            return ics_fallback.fallback(kind)
         return list(_cache[kind]["events"])
 
 
@@ -168,3 +269,6 @@ def refresh() -> bool:
         if ok:
             _last_refresh = time.time()
         return ok
+
+
+_load_disk()

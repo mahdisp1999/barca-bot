@@ -1,12 +1,11 @@
 """bot_state.json, loaded ONCE and shared in memory.
-
-Keys: last_bot_message_time (epoch seconds of the last message to the admin),
-watched, result_sent (see services/tracking.py).
+Keys: watched, result_sent (see services/tracking.py).
+The time of the last message to each user is NOT kept here: it is read from the
+database (storage.sqlite.last_sent_at), so it is per user and survives restarts.
 """
 import json
 import logging
 import os
-import time
 
 import settings
 
@@ -15,11 +14,10 @@ logger = logging.getLogger(__name__)
 # Keys written by older versions; dropped on load.
 _OBSOLETE = (
     "last_download_time", "last_match_uid", "last_match_summary", "cooldown_until",
-    "match_ended", "match_ended_time", "last_status_send_time",
+    "match_ended", "match_ended_time", "last_status_send_time", "last_bot_message_time",
 )
 
 _state = None
-
 
 def get() -> dict:
     global _state
@@ -33,8 +31,6 @@ def get() -> dict:
                 data = {}
         if not isinstance(data, dict):
             data = {}
-        # Seed from the old key so existing installs keep their 12h timing.
-        data.setdefault("last_bot_message_time", data.get("last_status_send_time", 0))
         for key in _OBSOLETE:
             data.pop(key, None)
         _state = data
@@ -50,8 +46,3 @@ def save() -> None:
         os.replace(tmp, settings.STATE_FILE)
     except OSError as e:
         logger.error("خطا در ذخیره وضعیت: %s", e)
-
-
-def touch_message_time() -> None:
-    get()["last_bot_message_time"] = time.time()
-    save()

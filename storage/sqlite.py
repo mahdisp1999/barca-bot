@@ -10,13 +10,13 @@ import logging
 import sqlite3
 from contextlib import contextmanager
 from datetime import datetime, timedelta
-from typing import Any, Iterator, Optional
+from typing import Iterator, Optional
 
 import settings
 
 logger = logging.getLogger(__name__)
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 _SCHEMA = f"""
 CREATE TABLE IF NOT EXISTS usage_log (
@@ -53,14 +53,16 @@ CREATE INDEX IF NOT EXISTS idx_usage_log_ts      ON usage_log(ts);
 CREATE INDEX IF NOT EXISTS idx_usage_log_user_id ON usage_log(user_id);
 CREATE INDEX IF NOT EXISTS idx_usage_log_kind    ON usage_log(kind);
 
--- v3: kickoff is part of the key, so a rescheduled match gets fresh reminders.
+-- v4: one row per (match, alert_type, kickoff, user_id) so every allowed user
+-- gets the reminder/result exactly once.
 CREATE TABLE IF NOT EXISTS match_alerts (
     match_uid  TEXT    NOT NULL,
-    alert_type TEXT    NOT NULL,   -- e.g. '10m'
-    kickoff    TEXT    NOT NULL,   -- local ISO kick-off time (minutes precision)
+    alert_type TEXT    NOT NULL,   -- '5m' | '10m' | ... | 'result'
+    kickoff    TEXT    NOT NULL,
+    user_id    INTEGER NOT NULL,
     sent       INTEGER NOT NULL DEFAULT 0,
     sent_at    TEXT    NOT NULL,
-    PRIMARY KEY (match_uid, alert_type, kickoff)
+    PRIMARY KEY (match_uid, alert_type, kickoff, user_id)
 );
 
 PRAGMA user_version = {SCHEMA_VERSION};
@@ -105,9 +107,10 @@ def init_db() -> None:
     """Create tables. Called once at startup (fail fast)."""
     with connect() as conn:
         conn.execute("PRAGMA journal_mode=WAL")  # persistent, so set once here
-        # match_alerts changed shape in v3. It only de-duplicates reminders, so
-        # dropping the old table is safe (worst case: one repeated reminder).
-        if conn.execute("PRAGMA user_version").fetchone()[0] < 3:
+        # match_alerts changed shape in v4 (per-user rows). It only de-duplicates
+        # reminders, so dropping the old table is safe (worst case: one repeated
+        # reminder per user).
+        if conn.execute("PRAGMA user_version").fetchone()[0] < 4:
             conn.execute("DROP TABLE IF EXISTS match_alerts")
         conn.executescript(_SCHEMA)
     logger.info("دیتابیس لاگ آماده است: %s", settings.DB_PATH)
@@ -118,8 +121,8 @@ def cleanup_old_data(alert_days: int, log_days: int) -> dict:
     try:
         with connect() as conn:
             a = conn.execute("DELETE FROM match_alerts WHERE sent_at < ?", (_cutoff(alert_days),))
-            l = conn.execute("DELETE FROM usage_log WHERE ts < ?", (_cutoff(log_days),))
-            return {"alerts": a.rowcount, "log": l.rowcount}
+            log = conn.execute("DELETE FROM usage_log WHERE ts < ?", (_cutoff(log_days),))
+            return {"alerts": a.rowcount, "log": log.rowcount}
     except sqlite3.Error as e:
         logger.exception("خطا در پاک‌سازی داده‌های قدیمی: %s", e)
         return {"alerts": 0, "log": 0}
@@ -197,8 +200,8 @@ def upsert_user(
 
 # ---------- reminder bookkeeping ----------
 
-def alert_pending(match_uid: str, alert_type: str, kickoff: str) -> bool:
-    """True if this reminder still has to be sent.
+def alert_pending(match_uid: str, alert_type: str, kickoff: str, user_id: int) -> bool:
+    """True if this reminder still has to be sent to this user.
 
     Registers the reminder on first sight (atomic INSERT OR IGNORE), so it
     survives restarts. On a database error it answers True (better a repeated
@@ -207,13 +210,15 @@ def alert_pending(match_uid: str, alert_type: str, kickoff: str) -> bool:
     try:
         with connect() as conn:
             conn.execute(
-                "INSERT OR IGNORE INTO match_alerts (match_uid, alert_type, kickoff, sent, sent_at) "
-                "VALUES (?, ?, ?, 0, ?)",
-                (match_uid, alert_type, kickoff, now_iso()),
+                "INSERT OR IGNORE INTO match_alerts "
+                "(match_uid, alert_type, kickoff, user_id, sent, sent_at) "
+                "VALUES (?, ?, ?, ?, 0, ?)",
+                (match_uid, alert_type, kickoff, user_id, now_iso()),
             )
             row = conn.execute(
-                "SELECT sent FROM match_alerts WHERE match_uid=? AND alert_type=? AND kickoff=?",
-                (match_uid, alert_type, kickoff),
+                "SELECT sent FROM match_alerts "
+                "WHERE match_uid=? AND alert_type=? AND kickoff=? AND user_id=?",
+                (match_uid, alert_type, kickoff, user_id),
             ).fetchone()
             return not row["sent"]
     except sqlite3.Error as e:
@@ -221,16 +226,31 @@ def alert_pending(match_uid: str, alert_type: str, kickoff: str) -> bool:
         return True
 
 
-def mark_alert_sent(match_uid: str, alert_type: str, kickoff: str) -> None:
+def mark_alert_sent(match_uid: str, alert_type: str, kickoff: str, user_id: int) -> None:
     try:
         with connect() as conn:
             conn.execute(
                 "UPDATE match_alerts SET sent = 1, sent_at = ? "
-                "WHERE match_uid=? AND alert_type=? AND kickoff=?",
-                (now_iso(), match_uid, alert_type, kickoff),
+                "WHERE match_uid=? AND alert_type=? AND kickoff=? AND user_id=?",
+                (now_iso(), match_uid, alert_type, kickoff, user_id),
             )
     except sqlite3.Error as e:
         logger.exception("خطا در به‌روزرسانی وضعیت هشدار: %s", e)
+
+
+def last_sent_at(user_id: int) -> Optional[datetime]:
+    """زمان آخرین پیام موفق ربات به این کاربر (از usage_log)."""
+    try:
+        with connect(readonly=True) as conn:
+            row = conn.execute(
+                "SELECT MAX(ts) AS t FROM usage_log "
+                "WHERE user_id = ? AND direction = 'outbound' AND delivery = 'sent'",
+                (user_id,),
+            ).fetchone()
+        return datetime.fromisoformat(row["t"]) if row["t"] else None
+    except sqlite3.Error as e:
+        logger.exception("خطا در خواندن آخرین پیام کاربر %s: %s", user_id, e)
+        return None
 
 
 # ---------- reading (for /usage and report.py) ----------

@@ -35,7 +35,10 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def cmd_sync(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # blocking HTTP calls -> worker thread, so the bot stays responsive
-    if await asyncio.to_thread(matches.refresh):
+    ok = await asyncio.to_thread(matches.refresh)
+    if not ok:  # API unavailable: the saved data is still good enough to show
+        ok = bool(await asyncio.to_thread(matches.upcoming))
+    if ok:
         await reply_tracked(update, context, "✅ اطلاعات بازی‌ها به‌روز شد.", command="sync")
     else:
         await reply_tracked(update, context, "❌ خطا در دریافت اطلاعات از API.", command="sync")

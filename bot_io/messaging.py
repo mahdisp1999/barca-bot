@@ -1,13 +1,9 @@
 """The only way messages leave the bot: every part is logged with its delivery result."""
 import logging
 from typing import Optional
-
 from telegram import Update
 from telegram.ext import ContextTypes
-
-import settings
 from bot_io.access import user_fields
-from services import state as state_store
 from storage import sqlite as db
 
 logger = logging.getLogger(__name__)
@@ -60,8 +56,6 @@ async def _send_one(
         kind=kind, direction="outbound", command=command, user_id=user_id,
         chat_id=chat_id, text_sent=text, delivery="sent", match_uid=match_uid,
     )
-    if chat_id == settings.ADMIN_ID:
-        state_store.touch_message_time()  # feeds the "12h since last message" rule
     return True
 
 

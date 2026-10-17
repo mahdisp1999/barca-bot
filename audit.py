@@ -3,6 +3,7 @@ import logging
 import traceback
 
 from telegram import Update
+from telegram.error import NetworkError
 from telegram.ext import ContextTypes
 
 from bot_io.access import can_use, user_fields
@@ -23,9 +24,8 @@ async def log_inbound(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if text and text.startswith("/"):
         command = text.split()[0][1:].split("@")[0]
         kind = "command"
-
     fields = user_fields(update)
-    cmd = REGISTRY.get(command)
+    cmd = REGISTRY.get(command or "")
     if cmd and not can_use(fields["user_id"], cmd.admin_only):
         return  # access.authorize() already logged this attempt as kind='denied'
 
@@ -35,6 +35,11 @@ async def log_inbound(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def on_error(update: object, context: ContextTypes.DEFAULT_TYPE):
     exc = context.error
     if exc is None:
+        return
+    # Dropped connections / timeouts to Telegram (or its proxy) are transient:
+    # python-telegram-bot already retries them by itself, so no traceback and no DB row.
+    if isinstance(exc, NetworkError):
+        logger.warning("خطای شبکه با تلگرام (خودکار دوباره تلاش می‌شود): %s", exc)
         return
     tb = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
     logger.error("خطای هندلر: %s\n%s", exc, tb)
