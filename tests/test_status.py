@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from formatting import names, status
 
@@ -48,6 +48,19 @@ def test_missing_data_does_not_crash(make_event):
 def test_reminder_label(make_event):
     assert "۱ ساعت" in status.reminder_message(60, None, make_event(), NOW)
     assert "۱۰ دقیقه" in status.reminder_message(10, None, make_event(), NOW)
+
+
+def test_last_result_hidden_within_window(make_event):
+    last = make_event(status="finished", goals_for=2, goals_against=0, is_home=True,
+                      local_dt=datetime(2026, 9, 26, 22, 0))
+    close = make_event(local_dt=NOW + timedelta(minutes=100))  # 100 min to kick-off
+    far = make_event(local_dt=NOW + timedelta(minutes=121))    # 121 min to kick-off
+    # within 120 minutes: no previous result
+    assert "نتیجه آخرین بازی" not in status.reminder_message(60, last, close, NOW, 120)
+    # more than 120 minutes: previous result is shown as before
+    assert "نتیجه آخرین بازی" in status.reminder_message(60, last, far, NOW, 120)
+    # no window given: old behaviour
+    assert "نتیجه آخرین بازی" in status.reminder_message(60, last, close, NOW)
 
 
 def test_names_fallback():

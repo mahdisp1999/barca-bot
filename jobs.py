@@ -96,7 +96,9 @@ async def check_reminders(context: ContextTypes.DEFAULT_TYPE):
 
         if not last_loaded:
             last, last_loaded = await asyncio.to_thread(matches.last_result), True
-        text = status.reminder_message(due, last, ev, now)
+        text = status.reminder_message(
+            due, last, ev, now, settings.HIDE_LAST_RESULT_WITHIN_MIN
+        )
         sent = await _broadcast(
             context, pending, text, kind="alert", command="match_alert", match_uid=ev["uid"]
         )
@@ -180,7 +182,9 @@ async def _auto_status(context, users: List[int], events: list, now: datetime) -
         return
 
     last = await asyncio.to_thread(matches.last_result)
-    text = status.status_message(last, nxt, now)
+    text = status.status_message(
+        last, nxt, now, settings.HIDE_LAST_RESULT_WITHIN_MIN
+    )
     for uid in targets:
         _auto_attempt[uid] = now
     sent = await _broadcast(context, targets, text, kind="status", command="auto_status")

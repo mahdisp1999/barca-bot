@@ -96,7 +96,19 @@ def next_block(ev: dict, now: datetime) -> str:
     ])
 
 
-def status_message(last: Optional[dict], nxt: Optional[dict], now: datetime) -> str:
+def _too_close(nxt: Optional[dict], now: datetime, window: Optional[int]) -> bool:
+    """True if the next match starts within `window` minutes. None = no limit."""
+    if window is None or not nxt:
+        return False
+    return (nxt["local_dt"] - now).total_seconds() / 60 <= window
+
+
+def status_message(
+    last: Optional[dict], nxt: Optional[dict], now: datetime,
+    hide_last_within_min: Optional[int] = None,
+) -> str:
+    if _too_close(nxt, now, hide_last_within_min):
+        last = None  # close to kick-off: only the next match is shown
     blocks = []
     if last:
         blocks.append(result_block(last, now))
@@ -116,5 +128,11 @@ def _reminder_label(minutes: int) -> str:
     return f"⏰ <b>{fmt.fa_digits(minutes)} دقیقه تا شروع بازی!</b>"
 
 
-def reminder_message(minutes: int, last: Optional[dict], nxt: dict, now: datetime) -> str:
-    return f"{_reminder_label(minutes)}\n\n{status_message(last, nxt, now)}"
+def reminder_message(
+    minutes: int, last: Optional[dict], nxt: dict, now: datetime,
+    hide_last_within_min: Optional[int] = None,
+) -> str:
+    return (
+        f"{_reminder_label(minutes)}\n\n"
+        f"{status_message(last, nxt, now, hide_last_within_min)}"
+    )

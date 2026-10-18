@@ -94,6 +94,8 @@ REMINDER_MINUTES = sorted({m for m in _int_list("REMINDER_MINUTES") if m > 0}) o
     _DEFAULT_REMINDERS
 )
 REMINDER_GRACE_MIN = 3  # a reminder may be at most this many minutes late
+# اگر بازی بعدی این‌قدر دقیقه یا کمتر دیگر باشد، «نتیجه‌ی آخرین بازی» در یادآوری و وضعیت خودکار نشان داده نمی‌شود
+HIDE_LAST_RESULT_WITHIN_MIN = 240
 REMINDER_CHECK_INTERVAL = 60  # seconds; cache-only, costs no API quota
 RESULT_CHECK_INTERVAL = 600  # seconds; may call the API
 RESULT_CHECK_AFTER_MIN = 90  # start looking for a result this long after kick-off
