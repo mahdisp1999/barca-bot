@@ -104,11 +104,15 @@ AUTO_STATUS_QUIET_H = 12  # ...and THAT USER got no message for this long
 AUTO_STATUS_RETRY_H = 1  # do not retry an auto status to the same user more often than this
 
 # ---------- storage ----------
-DB_PATH = _path("DB_PATH", "usage.db")
-STATE_FILE = _path("STATE_FILE", "bot_state.json")
-CACHE_FILE = _path("CACHE_FILE", "api_cache.json")  # last good API data, survives restarts
+# یک دیتابیس برای همه‌چیز: لاگ، کاربران، هشدارها و وضعیت بازی‌ها
+DB_PATH = _path("DB_PATH", "barca_data.db")
+# تنها فایل کش: آخرین داده‌ی سالم API (بعد از ری‌استارت هم در دسترس است)
+CACHE_FILE = _path("CACHE_FILE", "barca_cache.json")
 LOG_RETENTION_DAYS = _int("LOG_RETENTION_DAYS", 180)
 ALERT_RETENTION_DAYS = 30
+# فقط برای مهاجرت یک‌باره از نسخه‌ی قبل؛ بعد از اولین اجرا دیگر خوانده نمی‌شوند
+LEGACY_DB_PATH = ROOT_DIR / "usage.db"
+LEGACY_STATE_FILE = ROOT_DIR / "bot_state.json"
 
 # ---------- ICS calendar ----------
 # آدرس فایل ICS باشگاه بارسلونا (یا هر منبع دلخواه دیگر).

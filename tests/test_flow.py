@@ -14,10 +14,9 @@ from services import matches, state as state_store
 
 
 @pytest.fixture
-def env(tmp_db, monkeypatch, tmp_path, make_event):
+def env(tmp_db, monkeypatch, make_event):
     monkeypatch.setattr(settings, "ADMIN_ID", 111)
     monkeypatch.setattr(settings, "ALLOWED_IDS", {111, 222})
-    monkeypatch.setattr(settings, "STATE_FILE", tmp_path / "state.json")
     monkeypatch.setattr(state_store, "_state", None)
     now = datetime(2026, 9, 19, 21, 25)
     ev = make_event(uid="m1", local_dt=now + timedelta(minutes=30))

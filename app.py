@@ -1,5 +1,5 @@
 """Builds the Telegram Application: handlers, error handler, scheduled jobs."""
-from telegram import BotCommand
+from telegram import BotCommand, BotCommandScopeChat, BotCommandScopeAllPrivateChats
 from telegram.ext import Application, ApplicationBuilder, MessageHandler, filters
 
 import audit
@@ -9,7 +9,16 @@ import settings
 
 
 async def _post_init(app: Application) -> None:
-    await app.bot.set_my_commands([BotCommand(c.name, c.description) for c in commands.COMMANDS])
+    # Admin gets all commands
+    await app.bot.set_my_commands(
+        [BotCommand(c.name, c.description) for c in commands.COMMANDS],
+        scope=BotCommandScopeChat(chat_id=settings.ADMIN_ID)
+    )
+    # Regular users get only /start and /status
+    await app.bot.set_my_commands(
+        [BotCommand("start", "Start the bot"), BotCommand("status", "Check your status")],
+        scope=BotCommandScopeAllPrivateChats()
+    )
 
 
 def build_application() -> Application:

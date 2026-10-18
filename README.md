@@ -25,7 +25,7 @@ python main.py
 ```
 
 - ✅ بدون `PYTHONPATH` و از هر جایی قابل اجراست.
-- ✅ `.env`، `usage.db` و `bot_state.json` همه در **ریشه‌ی پروژه** هستند.
+- ✅ `.env`، `barca_data.db` و `barca_cache.json` همه در **ریشه‌ی پروژه** هستند.
 - ✅ با اجرای موفق این پیام را می‌بینی: `ربات آماده است.`
 
 ### 📦 پیش‌نیازها
@@ -55,12 +55,12 @@ python main.py
 | `TELEGRAM_ADMIN_ID` | ✅ | ادمین (مجاز خودکار) و تنها کاربر `/usage`. اگر خالی باشد `/usage` برای همه بسته است |
 | `SPORTS_API_KEY` | ✅ | کلید SportsAPI Pro |
 | `ALLOWED_USERS` | توصیه می‌شود | آیدی‌های مجاز با کاما؛ **همه‌ی این‌ها پیام‌های خودکار می‌گیرند** |
-| `TEAM_ID` | ❌ | پیش‌فرض `2817`. ⚠️ با پاسخ واقعی API تأیید کن |
-| `LOCAL_TZ` | ❌ | پیش‌فرض `Asia/Tehran` |
-| `REMINDER_MINUTES` | ❌ | پیش‌فرض `5,10,15,30,60` |
-| `BOT_API_BASE_URL` | ❌ | آدرس پروکسی Bot API |
-| `DB_PATH` / `STATE_FILE` / `CACHE_FILE` | ❌ | مسیر نسبی یعنی نسبت به ریشه‌ی پروژه |
-| `LOG_RETENTION_DAYS` | ❌ | پیش‌فرض `180`؛ لاگ قدیمی‌تر خودکار پاک می‌شود |
+| `TEAM_ID` | 🟡 | پیش‌فرض `2817`. ⚠️ با پاسخ واقعی API تأیید کن |
+| `LOCAL_TZ` | 🟡 | پیش‌فرض `Asia/Tehran` |
+| `REMINDER_MINUTES` | 🟡 | پیش‌فرض `5,10,15,30,60` |
+| `BOT_API_BASE_URL` | 🟡| آدرس پروکسی Bot API |
+| `DB_PATH` / `CACHE_FILE` | 🟡 | مسیر نسبی یعنی نسبت به ریشه‌ی پروژه. پیش‌فرض: `barca_data.db` و `barca_cache.json` |
+| `LOG_RETENTION_DAYS` | 🟡 | پیش‌فرض `180`؛ لاگ قدیمی‌تر خودکار پاک می‌شود |
 
 ثابت‌های داخل `settings.py` که ممکن است بخواهی عوض کنی:
 
@@ -97,7 +97,6 @@ python main.py
 🔜 بازی بعدی:
 🏆 رقابت: لالیگا
 ⚔️ حریف: سویا (Sevilla) - بازی در خانه حریف (Away)
-🏟️ ورزشگاه: Ramón Sánchez-Pizjuán در شهر Sevilla، Spain
 📆 تاریخ: شنبه ۲۸ شهریور ۱۴۰۵، (۱۹ سپتامبر ۲۰۲۶)
 ⏰ ساعت: حدود ساعت ۲۲:۳۰ به وقت ایران (۱۹:۰۰ به وقت جهانی UTC)
 ⏳ ۱ روز و ۱۹ ساعت دیگر
@@ -137,18 +136,18 @@ barca-bot/
 ├── services/            ← منطق کسب‌وکار (بدون تلگرام)
 │   ├── matches.py       ← بازی بعدی، یادآوری، نتیجه
 │   ├── tracking.py      ← بازی‌هایی که منتظر نتیجه‌اند
-│   ├── state.py         ← bot_state.json
+│   ├── state.py         ← وضعیت بازی‌ها (داخل barca_data.db)
 │   └── reports.py       ← متن گزارش استفاده
 ├── providers/
 │   └── sportsapipro.py  ← API + کش
 ├── storage/
-│   └── sqlite.py        ← usage.db
+│   └── sqlite.py        ← barca_data.db (لاگ، کاربران، هشدارها، وضعیت بازی‌ها، مهاجرت)
 ├── formatting/
 │   ├── fmt.py           ← ارقام فارسی، تاریخ شمسی، زمان باقی‌مانده
 │   ├── names.py         ← نام فارسی تیم‌ها و رقابت‌ها
 │   └── status.py        ← قالب پیام‌ها
 ├── tests/
-├── .env, usage.db, bot_state.json, api_cache.json   ← ریشه (ساخته‌ی تو / اجرا)
+├── .env, barca_data.db, barca_cache.json   ← ریشه (ساخته‌ی تو / اجرا)
 └── requirements.txt, pytest.ini, .env.example, .gitignore
 ```
 
@@ -214,8 +213,9 @@ journalctl -u barca-bot -f
 
 ## 🔄 مهاجرت از نسخه‌ی قبلی
 
-- `usage.db` همان‌جا که هست می‌ماند و خودکار به اسکیمای ۴ مهاجرت می‌شود. جدول `match_alerts` دوباره ساخته می‌شود (بدترین حالت: یک یادآوری تکراری برای هر کاربر).
-- کلید قدیمی `last_bot_message_time` در `bot_state.json` دیگر استفاده نمی‌شود؛ زمان آخرین پیام هر کاربر از دیتابیس خوانده می‌شود.
+- **یک فایل دیتابیس:** از این نسخه همه‌چیز در `barca_data.db` است. اگر `usage.db` و `bot_state.json` قدیمی در ریشه باشند، **اولین اجرا** داده‌هایشان را یک‌بار وارد `barca_data.db` می‌کند. بعد از آن این دو فایل دیگر خوانده نمی‌شوند؛ می‌توانی نگهشان داری یا پاکشان کنی.
+- **کش:** `api_cache.json` دیگر استفاده نمی‌شود. کش جدید `barca_cache.json` است و خودش ساخته می‌شود.
+- `match_alerts` قدیمی (قبل از نسخه‌ی ۴) وارد نمی‌شود. بدترین حالت: یک یادآوری تکراری برای هر کاربر.
 - `ICS` و `MATCH_SOURCE` حذف شده‌اند. اگر در `.env` داری، بی‌اثرند.
 
 ---
@@ -231,10 +231,10 @@ journalctl -u barca-bot -f
 | هیچ هشداری نمی‌رود | `TELEGRAM_ADMIN_ID` و `ALLOWED_USERS` هر دو خالی‌اند، یا زمانش نرسیده |
 | یک کاربر هشدار نمی‌گیرد | آیدی‌اش در `ALLOWED_USERS` نیست یا `/start` نزده؛ در `python report.py --user <id>` دنبال `delivery=failed` بگرد |
 | `/status` اطلاعاتی نشان نمی‌دهد | `/sync` بزن و لاگ خطای API را ببین |
-| `429 Too Many Requests` در لاگ | سهمیه‌ی API تمام شده؛ ربات خودش چند دقیقه صبر می‌کند و تا آن موقع از داده‌ی ذخیره‌شده (`api_cache.json`) استفاده می‌کند |
+| `429 Too Many Requests` در لاگ | سهمیه‌ی API تمام شده؛ ربات خودش چند دقیقه صبر می‌کند و تا آن موقع از داده‌ی ذخیره‌شده (`barca_cache.json`) استفاده می‌کند |
 | `NetworkError / ReadError` در لاگ | قطعی گذرای شبکه یا پروکسی تلگرام؛ کتابخانه خودکار دوباره وصل می‌شود |
 | `database is locked` | دو نمونه‌ی ربات هم‌زمان اجرا شده‌اند |
-| می‌خواهی یادآوری دوباره برود | `sqlite3 usage.db "DELETE FROM match_alerts WHERE match_uid='...';"` |
+| می‌خواهی یادآوری دوباره برود | `sqlite3 barca_data.db "DELETE FROM match_alerts WHERE match_uid='...';"` |
 
 چک سریع پاسخ API (برای تأیید `TEAM_ID`، رقابت و ورزشگاه):
 
@@ -246,6 +246,6 @@ curl -H "x-api-key: $SPORTS_API_KEY" https://api.sportsapipro.com/v2/football/te
 
 ## 🛡️ امنیت و حریم خصوصی
 
-- `.env`، `usage.db*`، `bot_state.json` و `api_cache.json` در `.gitignore` هستند. کلید API و توکن را هرگز در Git نگذار.
-- `usage.db` متن پیام‌ها و نام و آیدی کاربران را دارد؛ مثل داده‌ی شخصی با آن رفتار کن. لاگ‌های قدیمی‌تر از `LOG_RETENTION_DAYS` خودکار پاک می‌شوند.
+- `.env`، `barca_data.db*` و `barca_cache.json` در `.gitignore` هستند. کلید API و توکن را هرگز در Git نگذار.
+- `barca_data.db` متن پیام‌ها و نام و آیدی کاربران را دارد؛ مثل داده‌ی شخصی با آن رفتار کن. لاگ‌های قدیمی‌تر از `LOG_RETENTION_DAYS` خودکار پاک می‌شوند.
 - لاگ‌های `httpx` خاموش شده‌اند، چون آدرس درخواست‌های تلگرام شامل توکن ربات است.

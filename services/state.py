@@ -1,48 +1,22 @@
-"""bot_state.json, loaded ONCE and shared in memory.
-Keys: watched, result_sent (see services/tracking.py).
-The time of the last message to each user is NOT kept here: it is read from the
-database (storage.sqlite.last_sent_at), so it is per user and survives restarts.
+"""وضعیت ربات: بازی‌های منتظر نتیجه (watched) و نتیجه‌های ارسال‌شده (result_sent).
+
+این داده‌ها در barca_data.db نگه داشته می‌شوند. این ماژول فقط یک رابط ساده
+(get و save) دارد و خودش به SQLite دست نمی‌زند؛ کار را storage/sqlite.py می‌کند.
+زمان آخرین پیام هر کاربر هم از همان دیتابیس (usage_log) خوانده می‌شود.
 """
-import json
-import logging
-import os
-
-import settings
-
-logger = logging.getLogger(__name__)
-
-# Keys written by older versions; dropped on load.
-_OBSOLETE = (
-    "last_download_time", "last_match_uid", "last_match_summary", "cooldown_until",
-    "match_ended", "match_ended_time", "last_status_send_time", "last_bot_message_time",
-)
+from storage import sqlite as db
 
 _state = None
 
+
 def get() -> dict:
+    """داده‌ی وضعیت را یک‌بار از دیتابیس می‌خواند و در حافظه نگه می‌دارد."""
     global _state
     if _state is None:
-        data = {}
-        if settings.STATE_FILE.is_file():
-            try:
-                with open(settings.STATE_FILE, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-            except (json.JSONDecodeError, OSError):
-                data = {}
-        if not isinstance(data, dict):
-            data = {}
-        for key in _OBSOLETE:
-            data.pop(key, None)
-        _state = data
+        _state = db.load_state()
     return _state
 
 
 def save() -> None:
-    """Atomic write: a crash never leaves a half-written file."""
-    tmp = str(settings.STATE_FILE) + ".tmp"
-    try:
-        with open(tmp, "w", encoding="utf-8") as f:
-            json.dump(get(), f, ensure_ascii=False, indent=2)
-        os.replace(tmp, settings.STATE_FILE)
-    except OSError as e:
-        logger.error("خطا در ذخیره وضعیت: %s", e)
+    """وضعیت فعلی را در دیتابیس ذخیره می‌کند."""
+    db.save_state(get())

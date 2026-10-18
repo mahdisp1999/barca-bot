@@ -1,9 +1,12 @@
-"""SQLite layer: usage log, users directory, sent-reminder bookkeeping.
+"""SQLite layer: usage log, users directory, sent-reminder bookkeeping,
+and the match state (watched matches and sent results). One file: DB_PATH.
 
 Knows nothing about Telegram. Writes are best-effort: a database error is
 logged but never stops the bot. Connections are short-lived (one per operation)
 because handlers and jobs run concurrently.
 Timestamps are naive local time in settings.LOCAL_TZ, ISO-8601.
+
+Old files (usage.db, bot_state.json) are imported ONCE on the first start.
 """
 import json
 import logging
@@ -16,7 +19,7 @@ import settings
 
 logger = logging.getLogger(__name__)
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 _SCHEMA = f"""
 CREATE TABLE IF NOT EXISTS usage_log (
@@ -65,6 +68,25 @@ CREATE TABLE IF NOT EXISTS match_alerts (
     PRIMARY KEY (match_uid, alert_type, kickoff, user_id)
 );
 
+-- v5: matches waiting for their result (was bot_state.json "watched").
+CREATE TABLE IF NOT EXISTS watched_matches (
+    match_uid TEXT PRIMARY KEY,
+    kickoff   TEXT NOT NULL,
+    summary   TEXT NOT NULL
+);
+
+-- v5: results already sent, in order (was bot_state.json "result_sent").
+CREATE TABLE IF NOT EXISTS result_sent (
+    seq       INTEGER PRIMARY KEY AUTOINCREMENT,
+    match_uid TEXT NOT NULL
+);
+
+-- v5: small key/value facts, e.g. legacy_imported (migration done once).
+CREATE TABLE IF NOT EXISTS meta (
+    key   TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
+
 PRAGMA user_version = {SCHEMA_VERSION};
 """
 
@@ -104,7 +126,7 @@ def connect(readonly: bool = False) -> Iterator[sqlite3.Connection]:
 
 
 def init_db() -> None:
-    """Create tables. Called once at startup (fail fast)."""
+    """Create tables and import old data once. Called at startup (fail fast)."""
     with connect() as conn:
         conn.execute("PRAGMA journal_mode=WAL")  # persistent, so set once here
         # match_alerts changed shape in v4 (per-user rows). It only de-duplicates
@@ -113,6 +135,7 @@ def init_db() -> None:
         if conn.execute("PRAGMA user_version").fetchone()[0] < 4:
             conn.execute("DROP TABLE IF EXISTS match_alerts")
         conn.executescript(_SCHEMA)
+        _import_legacy(conn)
     logger.info("دیتابیس لاگ آماده است: %s", settings.DB_PATH)
 
 
@@ -126,6 +149,110 @@ def cleanup_old_data(alert_days: int, log_days: int) -> dict:
     except sqlite3.Error as e:
         logger.exception("خطا در پاک‌سازی داده‌های قدیمی: %s", e)
         return {"alerts": 0, "log": 0}
+
+
+# ---------- one-time import of the old files ----------
+
+def _import_legacy(conn: sqlite3.Connection) -> None:
+    """Runs once. Copies usage.db and bot_state.json into this database."""
+    if conn.execute("SELECT 1 FROM meta WHERE key = 'legacy_imported'").fetchone():
+        return
+    if settings.LEGACY_DB_PATH.is_file():
+        _copy_legacy_db(conn)
+    if settings.LEGACY_STATE_FILE.is_file():
+        _copy_legacy_state(conn)
+    conn.execute("INSERT INTO meta (key, value) VALUES ('legacy_imported', ?)", (now_iso(),))
+    logger.info("داده‌ی نسخه‌ی قبلی به %s منتقل شد.", settings.DB_PATH)
+
+
+def _copy_legacy_db(conn: sqlite3.Connection) -> None:
+    src = sqlite3.connect(str(settings.LEGACY_DB_PATH), timeout=5)
+    try:
+        cols = ",".join(_LOG_COLUMNS)
+        rows = src.execute(f"SELECT {cols} FROM usage_log ORDER BY id").fetchall()
+        conn.executemany(
+            f"INSERT INTO usage_log ({cols}) VALUES ({','.join('?' * len(_LOG_COLUMNS))})",
+            rows,
+        )
+        users = src.execute(
+            "SELECT user_id, username, first_name, first_seen, last_seen, "
+            "total_events, denied_count, last_command FROM users"
+        ).fetchall()
+        conn.executemany(
+            "INSERT OR REPLACE INTO users (user_id, username, first_name, first_seen, last_seen, "
+            "total_events, denied_count, last_command) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            [tuple(u) for u in users],
+        )
+        # Old match_alerts before v4 had another shape: skip it (worst case: one repeated reminder).
+        if src.execute("PRAGMA user_version").fetchone()[0] >= 4:
+            alerts = src.execute(
+                "SELECT match_uid, alert_type, kickoff, user_id, sent, sent_at FROM match_alerts"
+            ).fetchall()
+            conn.executemany(
+                "INSERT OR IGNORE INTO match_alerts (match_uid, alert_type, kickoff, user_id, sent, sent_at) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                [tuple(a) for a in alerts],
+            )
+    finally:
+        src.close()
+
+
+def _copy_legacy_state(conn: sqlite3.Connection) -> None:
+    try:
+        with open(settings.LEGACY_STATE_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except (OSError, json.JSONDecodeError) as e:
+        logger.warning("bot_state.json قدیمی خوانده نشد و نادیده گرفته شد: %s", e)
+        return
+    if not isinstance(data, dict):
+        return
+    watched = data.get("watched") or {}
+    conn.executemany(
+        "INSERT OR REPLACE INTO watched_matches (match_uid, kickoff, summary) VALUES (?, ?, ?)",
+        [(uid, e["ts"], e["summary"]) for uid, e in watched.items()],
+    )
+    conn.executemany(
+        "INSERT INTO result_sent (match_uid) VALUES (?)",
+        [(uid,) for uid in (data.get("result_sent") or [])],
+    )
+
+
+# ---------- match state (watched + result_sent) ----------
+
+def load_state() -> dict:
+    """Returns {'watched': {uid: {ts, summary}}, 'result_sent': [uid, ...]}."""
+    try:
+        with connect(readonly=True) as conn:
+            watched = {
+                r["match_uid"]: {"ts": r["kickoff"], "summary": r["summary"]}
+                for r in conn.execute("SELECT match_uid, kickoff, summary FROM watched_matches")
+            }
+            sent = [
+                r["match_uid"]
+                for r in conn.execute("SELECT match_uid FROM result_sent ORDER BY seq")
+            ]
+        return {"watched": watched, "result_sent": sent}
+    except sqlite3.Error as e:
+        logger.exception("خطا در خواندن وضعیت بازی‌ها: %s", e)
+        return {"watched": {}, "result_sent": []}
+
+
+def save_state(state: dict) -> None:
+    """Writes the whole state again (it is small). Best-effort."""
+    try:
+        with connect() as conn:
+            conn.execute("DELETE FROM watched_matches")
+            conn.executemany(
+                "INSERT INTO watched_matches (match_uid, kickoff, summary) VALUES (?, ?, ?)",
+                [(uid, e["ts"], e["summary"]) for uid, e in state["watched"].items()],
+            )
+            conn.execute("DELETE FROM result_sent")
+            conn.executemany(
+                "INSERT INTO result_sent (match_uid) VALUES (?)",
+                [(uid,) for uid in state["result_sent"]],
+            )
+    except sqlite3.Error as e:
+        logger.exception("خطا در ذخیره‌ی وضعیت بازی‌ها: %s", e)
 
 
 # ---------- writing ----------

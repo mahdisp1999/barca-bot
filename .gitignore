@@ -1,13 +1,15 @@
 # Secrets
 .env
 
-# Data (contains user IDs / names)
+# Data (contains user IDs / names and match state)
+barca_data.db*
+barca_cache.json
+
+# Old files (kept out of Git in case they still exist after the migration)
 usage.db*
-usage.db
-usage.db-wal
-usage.db-shm
 bot_state.json
 bot_state.json.tmp
+api_cache.json
 
 # Calendar cache
 barcelona.ics

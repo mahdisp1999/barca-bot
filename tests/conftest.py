@@ -1,9 +1,6 @@
 from datetime import datetime
-
 import pytest
-
 import settings
-
 
 @pytest.fixture
 def make_event():
@@ -25,7 +22,10 @@ def make_event():
 
 @pytest.fixture
 def tmp_db(tmp_path, monkeypatch):
+    # دیتابیس موقت؛ فایل‌های قدیمی واقعی پروژه هم برای تست نادیده گرفته می‌شوند
     monkeypatch.setattr(settings, "DB_PATH", tmp_path / "t.db")
+    monkeypatch.setattr(settings, "LEGACY_DB_PATH", tmp_path / "no-legacy.db")
+    monkeypatch.setattr(settings, "LEGACY_STATE_FILE", tmp_path / "no-state.json")
     from storage import sqlite as db
     db.init_db()
     return db

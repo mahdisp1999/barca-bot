@@ -68,6 +68,10 @@ async def cmd_usage(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await reply_tracked(update, context, text, command="usage")
 
 
+async def cmd_health(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await reply_tracked(update, context, "✅ ربات فعال است.", command="health")
+
+
 # ---------- the table ----------
 
 @dataclass(frozen=True)
@@ -80,9 +84,10 @@ class Command:
 
 COMMANDS: List[Command] = [
     Command("start", "شروع", cmd_start),
-    Command("sync", "به‌روزرسانی اطلاعات بازی‌ها", cmd_sync),
+    Command("sync", "به‌روزرسانی اطلاعات بازی‌ها", cmd_sync, admin_only=True),
     Command("status", "وضعیت: آخرین نتیجه و بازی بعدی", cmd_status),
     Command("usage", "گزارش استفاده از ربات (فقط ادمین)", cmd_usage, admin_only=True),
+    Command("health", "وضعیت سلامت ربات", cmd_health, admin_only=True),
 ]
 REGISTRY = {c.name: c for c in COMMANDS}
 

@@ -5,12 +5,12 @@ import settings
 
 def test_alert_dedupe_and_reschedule(tmp_db):
     db = tmp_db
-    assert db.alert_pending("m1", "10m", "2026-09-19T22:30") is True
-    assert db.alert_pending("m1", "10m", "2026-09-19T22:30") is True   # not sent yet
-    db.mark_alert_sent("m1", "10m", "2026-09-19T22:30")
-    assert db.alert_pending("m1", "10m", "2026-09-19T22:30") is False  # sent: no repeat
-    assert db.alert_pending("m1", "10m", "2026-09-19T23:30") is True   # rescheduled: new reminder
-    assert db.alert_pending("m1", "5m", "2026-09-19T22:30") is True    # other reminder type
+    assert db.alert_pending("m1", "10m", "2026-09-19T22:30", 1) is True
+    assert db.alert_pending("m1", "10m", "2026-09-19T22:30", 1) is True   # not sent yet
+    db.mark_alert_sent("m1", "10m", "2026-09-19T22:30", 1)
+    assert db.alert_pending("m1", "10m", "2026-09-19T22:30", 1) is False  # sent: no repeat
+    assert db.alert_pending("m1", "10m", "2026-09-19T23:30", 1) is True   # rescheduled: new reminder
+    assert db.alert_pending("m1", "5m", "2026-09-19T22:30", 1) is True    # other reminder type
 
 
 def test_log_and_queries(tmp_db):
@@ -45,6 +45,8 @@ def test_migrates_old_alert_table(tmp_path, monkeypatch):
     )
     conn.close()
     monkeypatch.setattr(settings, "DB_PATH", path)
+    monkeypatch.setattr(settings, "LEGACY_DB_PATH", tmp_path / "no-legacy.db")
+    monkeypatch.setattr(settings, "LEGACY_STATE_FILE", tmp_path / "no-state.json")
     from storage import sqlite as db
     db.init_db()
     with db.connect() as c:
