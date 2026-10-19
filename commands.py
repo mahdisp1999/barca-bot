@@ -14,8 +14,8 @@ from telegram import Update
 from telegram.ext import CommandHandler, ContextTypes
 
 import settings
-from bot_io.access import DENY_TEXT, authorize, can_use
-from bot_io.messaging import reply_tracked
+from bot_io.access import DENY_TEXT, authorize, can_use, recipients
+from bot_io.messaging import broadcast_tracked, reply_tracked
 from formatting import fmt, status
 from services import matches, reports
 
@@ -49,6 +49,33 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     now = matches.now_local()
     text = status.status_message(last, matches.next_match(events, now), now)
     await reply_tracked(update, context, text, command="status", parse_mode="HTML")
+
+
+async def cmd_broadcast_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """فقط ادمین (جدول COMMANDS این را کنترل می‌کند).
+    همان متن /status را همان لحظه برای همه‌ی کاربران مجاز می‌فرستد."""
+    users = recipients()
+    if not users:  # هیچ گیرنده‌ای تعریف نشده
+        await reply_tracked(
+            update, context,
+            "⚠️ گیرنده‌ای تعریف نشده است. ALLOWED_USERS و TELEGRAM_ADMIN_ID را چک کنید.",
+            command="broadcast_status",
+        )
+        return
+
+    # همان متنی که /status نشان می‌دهد
+    last, events = await asyncio.to_thread(matches.snapshot)
+    now = matches.now_local()
+    text = status.status_message(last, matches.next_match(events, now), now)
+
+    delivered = await broadcast_tracked(
+        context, users, text, kind="status", command="broadcast_status", parse_mode="HTML",
+    )
+    await reply_tracked(
+        update, context,
+        f"✅ برای {fmt.fa_digits(delivered)} از {fmt.fa_digits(len(users))} کاربر ارسال شد.",
+        command="broadcast_status",
+    )
 
 
 async def cmd_usage(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -86,6 +113,8 @@ COMMANDS: List[Command] = [
     Command("start", "شروع", cmd_start),
     Command("sync", "به‌روزرسانی اطلاعات بازی‌ها", cmd_sync, admin_only=True),
     Command("status", "وضعیت: آخرین نتیجه و بازی بعدی", cmd_status),
+    Command("broadcast_status", "ارسال وضعیت به همه‌ی کاربران مجاز (فقط ادمین)",
+            cmd_broadcast_status, admin_only=True),
     Command("usage", "گزارش استفاده از ربات (فقط ادمین)", cmd_usage, admin_only=True),
     Command("health", "وضعیت سلامت ربات", cmd_health, admin_only=True),
 ]

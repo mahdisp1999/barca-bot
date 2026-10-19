@@ -1,4 +1,5 @@
 """The only way messages leave the bot: every part is logged with its delivery result."""
+import asyncio
 import logging
 from typing import Optional
 from telegram import Update
@@ -74,6 +75,24 @@ async def send_tracked(
         )
         all_ok = all_ok and ok
     return all_ok
+
+
+async def broadcast_tracked(
+    context: ContextTypes.DEFAULT_TYPE, chat_ids: list, text: str, *,
+    kind: str, command: str, parse_mode: Optional[str] = None,
+) -> int:
+    """همان متن را جداگانه به هر گیرنده می‌فرستد و هر ارسال را لاگ می‌کند.
+    خروجی: تعداد کسانی که پیام به آن‌ها رسیده."""
+    delivered = 0
+    for chat_id in chat_ids:
+        ok = await send_tracked(
+            context, chat_id, text, kind=kind, command=command,
+            user_id=chat_id, parse_mode=parse_mode,
+        )
+        if ok:
+            delivered += 1
+        await asyncio.sleep(0.05)  # کمی مکث تا از محدودیت تلگرام رد نشویم
+    return delivered
 
 
 async def reply_tracked(

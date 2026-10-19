@@ -94,3 +94,37 @@ def test_usage_closed_when_admin_not_configured(env):
     env.mp.setattr(settings, "ADMIN_ID", 0)
     _run_command("usage", _update(222, "/usage"), env.ctx)
     assert env.ctx.bot.send_message.await_args.kwargs["text"] == "⚠️ دسترسی ندارید."
+
+
+def test_broadcast_status_sends_to_all_allowed_users(env):
+    _run_command("broadcast_status", _update(111, "/broadcast_status"), env.ctx)
+    calls = env.ctx.bot.send_message.await_args_list
+    # دو پیام وضعیت (برای ادمین و کاربر ۲۲۲) + یک پیام خلاصه برای ادمین
+    assert len(calls) == 3
+    assert [calls[0].kwargs["chat_id"], calls[1].kwargs["chat_id"]] == [111, 222]
+    assert "نتیجه آخرین بازی" in calls[0].kwargs["text"]
+    assert "۲ از ۲" in calls[2].kwargs["text"]
+
+
+def test_broadcast_status_is_admin_only(env):
+    _run_command("broadcast_status", _update(222, "/broadcast_status"), env.ctx)
+    calls = env.ctx.bot.send_message.await_args_list
+    assert len(calls) == 1  # فقط پیام «دسترسی ندارید»
+    assert calls[0].kwargs["chat_id"] == 222
+    assert calls[0].kwargs["text"] == "⚠️ دسترسی ندارید."
+
+
+def test_broadcast_status_hidden_from_regular_users(env):
+    _run_command("start", _update(222, "/start"), env.ctx)
+    assert "/broadcast_status" not in env.ctx.bot.send_message.await_args.kwargs["text"]
+    _run_command("start", _update(111, "/start"), env.ctx)
+    assert "/broadcast_status" in env.ctx.bot.send_message.await_args.kwargs["text"]
+
+
+def test_broadcast_status_without_recipients(env):
+    env.mp.setattr(commands, "recipients", lambda: [])
+    _run_command("broadcast_status", _update(111, "/broadcast_status"), env.ctx)
+    calls = env.ctx.bot.send_message.await_args_list
+    assert len(calls) == 1  # فقط پیام خطا به ادمین
+    assert calls[0].kwargs["chat_id"] == 111
+    assert "گیرنده" in calls[0].kwargs["text"]

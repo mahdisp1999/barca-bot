@@ -101,8 +101,10 @@ RESULT_CHECK_INTERVAL = 600  # seconds; may call the API
 RESULT_CHECK_AFTER_MIN = 90  # start looking for a result this long after kick-off
 RESULT_GIVE_UP_AFTER_H = 6  # postponed/abandoned matches are dropped after this
 RESULT_HISTORY = 50  # how many already-sent result uids to remember
-AUTO_STATUS_WINDOW_H = 24  # auto status when the next match is closer than this...
-AUTO_STATUS_QUIET_H = 12  # ...and THAT USER got no message for this long
+# وضعیت خودکار: وقتی بازی بعدی کمتر از این ساعت دیگر باشد، پیام وضعیت می‌رود
+AUTO_STATUS_WINDOW_H = 72
+# و به همان کاربر در این ساعت پیامی نرفته باشد (هر کاربر حداکثر یک‌بار در ۲۴ ساعت)
+AUTO_STATUS_QUIET_H = 24
 AUTO_STATUS_RETRY_H = 1  # do not retry an auto status to the same user more often than this
 
 # ---------- storage ----------
