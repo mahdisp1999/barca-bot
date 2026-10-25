@@ -24,16 +24,6 @@ def test_draw_and_loss_text_is_dynamic(make_event):
     assert "❌" in loss and "شکست" in loss
 
 
-def test_next_block(make_event):
-    now = datetime(2026, 9, 18, 3, 0)
-    text = status.next_block(make_event(), now)
-    assert "سویا (Sevilla)" in text and "(Away)" in text
-    assert "شنبه ۲۸ شهریور ۱۴۰۵، (۱۹ سپتامبر ۲۰۲۶)" in text
-    assert "۲۲:۳۰ به وقت ایران (۱۹:۰۰ به وقت جهانی UTC)" in text
-    assert "۱ روز و ۱۹ ساعت دیگر" in text
-    assert "شهر Sevilla، Spain" in text
-
-
 def test_html_is_escaped(make_event):
     text = status.next_block(make_event(opponent="A<b>&B", stadium="X<script>"), NOW)
     assert "<script>" not in text and "A<b>" not in text

@@ -1,6 +1,9 @@
-"""Pure formatting helpers: Persian digits, Jalali/Gregorian dates, remaining time.
-No I/O and no project imports."""
-from datetime import date, timedelta
+"""Pure formatting helpers: Persian digits, Jalali/Gregorian dates, remaining time,
+and the relative day word (امروز / امشب / فردا / فرداشب / ...).
+
+No I/O and no project imports. In particular this file does NOT import settings:
+the caller passes in the night-start time (see day_label)."""
+from datetime import date, datetime, time, timedelta
 
 _FA_DIGITS = str.maketrans("0123456789", "۰۱۲۳۴۵۶۷۸۹")
 
@@ -14,6 +17,13 @@ GREGORIAN_MONTHS = [
 ]
 # date.weekday(): Monday == 0. Index based, so it never depends on the server locale.
 WEEKDAYS = ["دوشنبه", "سه‌شنبه", "چهارشنبه", "پنجشنبه", "جمعه", "شنبه", "یکشنبه"]
+
+# کلمه‌ی روز بر اساس فاصله‌ی روزها از امروز (0 = امروز)
+_DAY_WORDS = {0: "امروز", 1: "فردا", 2: "پس‌فردا"}
+# همان کلمه‌ها برای بازی‌ای که از ساعت «شب» به بعد شروع می‌شود
+_NIGHT_WORDS = {0: "امشب", 1: "فرداشب", 2: "پس‌فرداشب"}
+# بازی‌هایی که قبل از این ساعت شروع می‌شوند (۰۰:۰۰ تا ۰۵:۵۹) هنوز جزو «شب قبل» حساب می‌شوند
+EARLY_MORNING_BEFORE_HOUR = 6
 
 
 def fa_digits(value) -> str:
@@ -80,3 +90,32 @@ def format_remaining_time(diff: timedelta) -> str:
     if minutes:
         return f"{fa_digits(minutes)} دقیقه دیگر"
     return "کمتر از ۱ دقیقه دیگر"
+
+
+def day_label(match_dt: datetime, now: datetime, night_from: time) -> str:
+    """کلمه‌ی روز برای خط «تاریخ» پیام بازی بعدی. تابع خالص: `now` را می‌گیرد.
+
+    - ۰ تا ۲ روز بعد: امروز / فردا / پس‌فردا
+    - اگر ساعت شروع از `night_from` (مثلاً ۱۸:۳۰) به بعد باشد: امشب / فرداشب / پس‌فرداشب
+    - بازی بامدادی (قبل از ۰۶:۰۰) جزو شب قبل است؛ تاریخ تقویمی می‌ماند و
+      توضیح داخل پرانتز اضافه می‌شود: «فردا - ۰۰:۳۰ بامداد، امشب»
+    - بیشتر از ۲ روز بعد یا گذشته: رشته‌ی خالی
+    """
+    # ۱. فاصله‌ی روزهای تقویمی از امروز
+    days = (match_dt.date() - now.date()).days
+    if days not in _DAY_WORDS:
+        return ""
+
+    # ۲. بازی بامدادی: کلمه‌ی تقویمی + توضیح شبی که به آن تعلق دارد
+    if match_dt.hour < EARLY_MORNING_BEFORE_HOUR:
+        night_days = days - 1  # شبی که این بازی بامدادی به آن تعلق دارد
+        base = _DAY_WORDS[days]
+        if night_days not in _NIGHT_WORDS:
+            return base
+        clock = fa_digits(f"{match_dt:%H:%M}")
+        return f"{base} - {clock} بامداد، {_NIGHT_WORDS[night_days]}"
+
+    # ۳. بازی شبانه (از ساعت مرز به بعد) یا روزانه
+    if match_dt.time() >= night_from:
+        return _NIGHT_WORDS[days]
+    return _DAY_WORDS[days]

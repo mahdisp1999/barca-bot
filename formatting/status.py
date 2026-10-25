@@ -3,9 +3,12 @@
 A match dict (see providers/sportsapipro.py) has: team, opponent, is_home,
 goals_for, goals_against, competition, stadium, city, country, local_dt, utc_dt.
 `now` is always passed in, so everything here is easy to test.
-"""
+
+`night_from` (a datetime.time, e.g. 18:30) is optional. When given, the next
+match line gets a day word such as «فرداشب». The caller passes it in, because
+this layer must not import settings."""
 import html
-from datetime import datetime
+from datetime import datetime, time
 from typing import Optional
 
 from formatting import fmt, names
@@ -78,21 +81,30 @@ def result_block(ev: dict, now: datetime, title: str = "نتیجه آخرین ب
     ])
 
 
-def next_block(ev: dict, now: datetime) -> str:
+def next_block(ev: dict, now: datetime, night_from: Optional[time] = None) -> str:
     fa = names.team_fa(ev["opponent"])
     opponent = f"{esc(fa)} ({esc(ev['opponent'])})" if fa else esc(ev["opponent"])
     side = "بازی خانگی (Home)" if ev["is_home"] else "بازی در خانه حریف (Away)"
     local, utc = ev["local_dt"], ev["utc_dt"]
+
+    # کلمه‌ی روز مثل «فرداشب» فقط بعد از خط «X روز و Y ساعت مانده تا شروع».
+    # فقط وقتی ساعت شب داده شده باشد.
+    day = f" ({fmt.day_label(local, now, night_from)})" if night_from is not None else ""
+    date_line = (
+        f"📆 تاریخ: {fmt.jalali_date_str(local.date())}، "
+        f"({fmt.gregorian_date_str(local.date())})"
+    )
+
     return "\n".join([
         "🔜 <b>بازی بعدی:</b>",
         f"🏆 رقابت: {esc(names.competition_fa(ev['competition']))}",
         f"⚔️ حریف: {opponent} - {side}",
         # f"🏟️ ورزشگاه: {_stadium_line(ev)}",
-        f"📆 تاریخ: {fmt.jalali_date_str(local.date())}، ({fmt.gregorian_date_str(local.date())})",
+        date_line,
         # The bot is for Iranian users, so the local time is always labelled "Iran time".
         f"⏰ ساعت: حدود ساعت {fmt.fa_digits(f'{local:%H:%M}')} به وقت ایران "
         f"({fmt.fa_digits(f'{utc:%H:%M}')} به وقت جهانی UTC)",
-        f"⏳ {fmt.format_remaining_time(local - now)}",
+        f"⏳ {fmt.format_remaining_time(local - now)}{day}",
     ])
 
 
@@ -106,6 +118,7 @@ def _too_close(nxt: Optional[dict], now: datetime, window: Optional[int]) -> boo
 def status_message(
     last: Optional[dict], nxt: Optional[dict], now: datetime,
     hide_last_within_min: Optional[int] = None,
+    night_from: Optional[time] = None,
 ) -> str:
     if _too_close(nxt, now, hide_last_within_min):
         last = None  # close to kick-off: only the next match is shown
@@ -113,7 +126,7 @@ def status_message(
     if last:
         blocks.append(result_block(last, now))
     if nxt:
-        blocks.append(next_block(nxt, now))
+        blocks.append(next_block(nxt, now, night_from))
     return "\n\n".join(blocks) or "📅 اطلاعاتی برای نمایش وجود ندارد."
 
 
@@ -131,8 +144,9 @@ def _reminder_label(minutes: int) -> str:
 def reminder_message(
     minutes: int, last: Optional[dict], nxt: dict, now: datetime,
     hide_last_within_min: Optional[int] = None,
+    night_from: Optional[time] = None,
 ) -> str:
     return (
         f"{_reminder_label(minutes)}\n\n"
-        f"{status_message(last, nxt, now, hide_last_within_min)}"
+        f"{status_message(last, nxt, now, hide_last_within_min, night_from)}"
     )

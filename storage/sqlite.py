@@ -274,7 +274,11 @@ def log_event(
     match_uid: Optional[str] = None,
     extra: Optional[dict] = None,
 ) -> None:
-    """Insert one usage_log row. Best-effort: never raises."""
+    """Insert one usage_log row. Best-effort: never raises.
+
+    If the caller does not pass username/first_name (automatic messages do not),
+    they are filled from the users table, when that user is known there.
+    """
     row: dict = {
         "ts": now_iso(), "kind": kind, "direction": direction, "command": command,
         "user_id": user_id, "username": username, "first_name": first_name,
@@ -285,6 +289,15 @@ def log_event(
     }
     try:
         with connect() as conn:
+            # نام از جدول users: فقط اگر در این رویداد نیامده باشد
+            if row["user_id"] is not None and (row["username"] is None or row["first_name"] is None):
+                known = conn.execute(
+                    "SELECT username, first_name FROM users WHERE user_id = ?",
+                    (row["user_id"],),
+                ).fetchone()
+                if known:
+                    row["username"] = row["username"] or known["username"]
+                    row["first_name"] = row["first_name"] or known["first_name"]
             conn.execute(
                 f"INSERT INTO usage_log ({','.join(_LOG_COLUMNS)}) "
                 f"VALUES ({','.join('?' * len(_LOG_COLUMNS))})",
@@ -323,6 +336,31 @@ def upsert_user(
             )
     except sqlite3.Error as e:
         logger.exception("خطا در به‌روزرسانی کاربر %s: %s", user_id, e)
+
+
+def save_user_names(*, user_id: int, username: Optional[str], first_name: Optional[str]) -> None:
+    """Store a user's current name WITHOUT counting an event (used at startup).
+
+    For a new user the row is created with total_events = 0. last_seen is then
+    the time the name was saved, not a real activity time.
+    """
+    ts = now_iso()
+    try:
+        with connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO users
+                    (user_id, username, first_name, first_seen, last_seen,
+                     total_events, denied_count, last_command)
+                VALUES (?, ?, ?, ?, ?, 0, 0, NULL)
+                ON CONFLICT(user_id) DO UPDATE SET
+                    username   = excluded.username,
+                    first_name = excluded.first_name
+                """,
+                (user_id, username, first_name, ts, ts),
+            )
+    except sqlite3.Error as e:
+        logger.exception("خطا در ذخیره‌ی نام کاربر %s: %s", user_id, e)
 
 
 # ---------- reminder bookkeeping ----------

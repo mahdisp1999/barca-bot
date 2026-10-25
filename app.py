@@ -2,10 +2,29 @@
 from telegram import BotCommand, BotCommandScopeChat, BotCommandScopeAllPrivateChats
 from telegram.ext import Application, ApplicationBuilder, MessageHandler, filters
 
+import logging
 import audit
 import commands
 import jobs
 import settings
+from storage import sqlite as db
+
+logger = logging.getLogger(__name__)
+
+async def _sync_user_names(app: Application) -> None:
+    """نام همه‌ی کاربران مجاز را یک‌بار از تلگرام می‌گیرد و در جدول users ذخیره می‌کند.
+
+    تلگرام فقط به کاربری که قبلاً /start زده جواب می‌دهد. بقیه رد می‌شوند و در لاگ ثبت می‌شوند.
+    """
+    for uid in sorted(settings.ALLOWED_IDS):
+        try:
+            chat = await app.bot.get_chat(uid)
+        except Exception as e:
+            logger.warning("نام کاربر %s از تلگرام گرفته نشد: %s", uid, e)
+            continue
+        db.save_user_names(
+            user_id=uid, username=chat.username, first_name=chat.first_name,
+        )
 
 
 async def _post_init(app: Application) -> None:
@@ -19,6 +38,7 @@ async def _post_init(app: Application) -> None:
         [BotCommand("start", "Start the bot"), BotCommand("status", "Check your status")],
         scope=BotCommandScopeAllPrivateChats()
     )
+    await _sync_user_names(app)
 
 
 def build_application() -> Application:

@@ -35,6 +35,22 @@ def test_cleanup_old_data(tmp_db):
     assert db.total_events() == 1
 
 
+def test_names_filled_from_users_table(tmp_db):
+    db = tmp_db
+    db.save_user_names(user_id=5, username="ali", first_name="Ali")
+    # پیام خودکار نام نمی‌فرستد؛ باید از جدول users پر شود
+    db.log_event(kind="alert", direction="outbound", user_id=5)
+    row = db.query_events(user_id=5)[0]
+    assert row["username"] == "ali" and row["first_name"] == "Ali"
+
+
+def test_save_user_names_does_not_count_events(tmp_db):
+    db = tmp_db
+    db.save_user_names(user_id=7, username=None, first_name="Sara")
+    assert db.total_events() == 0
+    assert db.top_users()[0]["total_events"] == 0
+
+
 def test_migrates_old_alert_table(tmp_path, monkeypatch):
     path = tmp_path / "old.db"
     conn = sqlite3.connect(path)

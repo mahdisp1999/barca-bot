@@ -47,7 +47,12 @@ async def cmd_sync(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     last, events = await asyncio.to_thread(matches.snapshot)
     now = matches.now_local()
-    text = status.status_message(last, matches.next_match(events, now), now)
+    # نتیجه‌ی قبلی وقتی بازی بعدی نزدیک است پنهان می‌شود؛ برچسب روز هم از تنظیمات می‌آید
+    text = status.status_message(
+        last, matches.next_match(events, now), now,
+        hide_last_within_min=settings.HIDE_LAST_RESULT_WITHIN_MIN,
+        night_from=settings.NIGHT_FROM,
+    )
     await reply_tracked(update, context, text, command="status", parse_mode="HTML")
 
 
@@ -66,7 +71,11 @@ async def cmd_broadcast_status(update: Update, context: ContextTypes.DEFAULT_TYP
     # همان متنی که /status نشان می‌دهد
     last, events = await asyncio.to_thread(matches.snapshot)
     now = matches.now_local()
-    text = status.status_message(last, matches.next_match(events, now), now)
+    text = status.status_message(
+        last, matches.next_match(events, now), now,
+        hide_last_within_min=settings.HIDE_LAST_RESULT_WITHIN_MIN,
+        night_from=settings.NIGHT_FROM,
+    )
 
     delivered = await broadcast_tracked(
         context, users, text, kind="status", command="broadcast_status", parse_mode="HTML",
